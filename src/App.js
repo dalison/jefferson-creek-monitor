@@ -99,22 +99,21 @@ const WaterGaugeApp = () => {
   // Fetch weather forecast data for flood prediction
   const fetchWeatherData = async () => {
     try {
-      const pointResponse = await fetch('https://api.weather.gov/points/38.5351,-75.0593');
+      // Use your Vercel API route instead of direct API call
+      const response = await fetch('/api/weather?lat=38.5351&lon=-75.0593');
       
-      if (pointResponse.ok) {
-        const pointData = await pointResponse.json();
-        const forecastResponse = await fetch(pointData.properties.forecastHourly);
-        
-        if (forecastResponse.ok) {
-          const forecastData = await forecastResponse.json();
-          setWeatherData(forecastData.properties.periods.slice(0, 72));
-          return forecastData.properties.periods.slice(0, 72);
+      if (response.ok) {
+        const result = await response.json();
+        if (result.success && result.data) {
+          setWeatherData(result.data);
+          return result.data;
         }
       }
     } catch (err) {
       console.error('Weather API error:', err);
     }
     
+    // Fallback to demo data if API fails
     const demoWeather = generateDemoWeatherData();
     setWeatherData(demoWeather);
     return demoWeather;
@@ -123,31 +122,21 @@ const WaterGaugeApp = () => {
   // Fetch tide predictions for Delaware Bay area
   const fetchTideData = async () => {
     try {
-      const endDate = new Date();
-      endDate.setDate(endDate.getDate() + 3);
-      const startDate = new Date();
-      
-      const formatDate = (date) => {
-        return date.getFullYear() + 
-               ('0' + (date.getMonth() + 1)).slice(-2) + 
-               ('0' + date.getDate()).slice(-2);
-      };
-      
-      const response = await fetch(
-        `https://api.tidesandcurrents.noaa.gov/api/prod/datagetter?begin_date=${formatDate(startDate)}&end_date=${formatDate(endDate)}&station=8557380&product=predictions&datum=navd&units=english&time_zone=lst_ldt&application=web_services&format=json`
-      );
+      // Use your Vercel API route instead of direct API call
+      const response = await fetch('/api/tides?station=8557380&days=3');
       
       if (response.ok) {
-        const data = await response.json();
-        if (data.predictions) {
-          setTideData(data.predictions);
-          return data.predictions;
+        const result = await response.json();
+        if (result.success && result.data) {
+          setTideData(result.data);
+          return result.data;
         }
       }
     } catch (err) {
       console.error('Tide API error:', err);
     }
     
+    // Fallback to demo data if API fails
     const demoTides = generateDemoTideData();
     setTideData(demoTides);
     return demoTides;
@@ -243,7 +232,7 @@ const WaterGaugeApp = () => {
           }
         };
         setGaugeData(demoData);
-        setError('Live API currently unavailable. Showing demo data for Jefferson Creek station.');
+        setError('Connecting to live data sources. Some features may show demo data during API transitions.');
         
       } else {
         const response = await fetch(
