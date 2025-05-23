@@ -20,6 +20,13 @@ const WaterGaugeApp = () => {
     if (typeof data === 'object' && data.value !== undefined) {
       return data.value;
     }
+    if (typeof data === 'string') {
+      // Extract numbers from strings like "15 mph"
+      const numMatch = data.match(/(\d+\.?\d*)/);
+      if (numMatch) {
+        return parseFloat(numMatch[1]);
+      }
+    }
     return data;
   };
 
@@ -34,6 +41,7 @@ const WaterGaugeApp = () => {
 
   // Generate demo weather data
   const generateDemoWeatherData = () => {
+    console.log('🌤️ Generating demo weather data...');
     const weather = [];
     const now = new Date();
     
@@ -41,17 +49,21 @@ const WaterGaugeApp = () => {
       const time = new Date(now.getTime() + i * 60 * 60 * 1000);
       const isRaining = Math.random() < 0.3;
       const pressure = 29.8 + Math.sin(i / 12) * 0.3 + (Math.random() - 0.5) * 0.2;
+      const temp = Math.round(65 + Math.sin(i / 12) * 10 + (Math.random() - 0.5) * 5);
+      const wind = Math.round(5 + Math.random() * 15);
+      const rain = isRaining ? Math.round(Math.random() * 60 + 40) : Math.round(Math.random() * 30);
       
       weather.push({
         startTime: time.toISOString(),
-        temperature: Math.round(65 + Math.sin(i / 12) * 10 + (Math.random() - 0.5) * 5),
-        probabilityOfPrecipitation: { value: isRaining ? Math.round(Math.random() * 60 + 40) : Math.round(Math.random() * 30) },
-        windSpeed: Math.round(5 + Math.random() * 15),
-        barometricPressure: +pressure.toFixed(2),
+        temperature: temp, // Simple number, not object
+        probabilityOfPrecipitation: rain, // Simple number, not object
+        windSpeed: wind, // Simple number, not object
+        barometricPressure: +pressure.toFixed(2), // Simple number, not object
         shortForecast: isRaining ? (Math.random() > 0.5 ? 'Rain' : 'Showers') : 'Partly Cloudy'
       });
     }
     
+    console.log('🌤️ Demo weather first item:', weather[0]);
     return weather;
   };
 
@@ -99,33 +111,68 @@ const WaterGaugeApp = () => {
   // Fetch weather forecast data for flood prediction
   const fetchWeatherData = async () => {
     try {
-      // Use your Vercel API route instead of direct API call
-      const response = await fetch('/api/weather?lat=38.5351&lon=-75.0593');
+      console.log('🌤️ Fetching weather data...');
       
-      if (response.ok) {
-        const result = await response.json();
-        if (result.success && result.data) {
-          // Process the real API data to match our expected format
-          const processedData = result.data.map(period => ({
-            ...period,
-            // Ensure probabilityOfPrecipitation is always a number
-            probabilityOfPrecipitation: period.probabilityOfPrecipitation?.value || period.probabilityOfPrecipitation || 0,
-            // Ensure other values are properly extracted
-            temperature: extractValue(period.temperature),
-            windSpeed: extractValue(period.windSpeed),
-            barometricPressure: extractValue(period.barometricPressure) || 29.9
-          }));
+      if (process.env.NODE_ENV === 'production') {
+        // Production: Use your Vercel API
+        const response = await fetch('/api/weather?lat=38.5351&lon=-75.0593');
+        console.log('🌤️ Weather response status:', response.status);
+        
+        if (response.ok) {
+          const result = await response.json();
+          console.log('🌤️ Raw weather API result:', result);
           
-          setWeatherData(processedData);
-          return processedData;
+          if (result.success && result.data) {
+            console.log('🌤️ Raw first weather item:', result.data[0]);
+            
+            const processedData = result.data.map(period => {
+              console.log('🌤️ Processing period:', {
+                temp: period.temperature,
+                pressure: period.barometricPressure,
+                wind: period.windSpeed,
+                rain: period.probabilityOfPrecipitation
+              });
+              
+              return {
+                ...period,
+                probabilityOfPrecipitation: extractValue(period.probabilityOfPrecipitation) || 0,
+                temperature: extractValue(period.temperature) || 65,
+                windSpeed: extractValue(period.windSpeed) || 10,
+                barometricPressure: extractValue(period.barometricPressure) || 29.9
+              };
+            });
+            
+            console.log('🌤️ First processed weather item:', processedData[0]);
+            setWeatherData(processedData);
+            return processedData;
+          }
+        }
+      } else {
+        // Development: Try direct API call (will likely fail due to CORS)
+        try {
+          const pointResponse = await fetch('https://api.weather.gov/points/38.5351,-75.0593');
+          if (pointResponse.ok) {
+            const pointData = await pointResponse.json();
+            const forecastResponse = await fetch(pointData.properties.forecastHourly);
+            if (forecastResponse.ok) {
+              const forecastData = await forecastResponse.json();
+              const processedData = forecastData.properties.periods.slice(0, 72);
+              setWeatherData(processedData);
+              return processedData;
+            }
+          }
+        } catch (corsErr) {
+          console.log('🌤️ CORS error in development, using demo data');
         }
       }
     } catch (err) {
-      console.error('Weather API error:', err);
+      console.error('🌤️ Weather API error:', err);
     }
     
-    // Fallback to demo data if API fails
+    console.log('🌤️ Falling back to demo weather data');
     const demoWeather = generateDemoWeatherData();
+    console.log('🌤️ Demo weather generated, length:', demoWeather.length);
+    console.log('🌤️ Demo weather first item:', demoWeather[0]);
     setWeatherData(demoWeather);
     return demoWeather;
   };
@@ -133,22 +180,58 @@ const WaterGaugeApp = () => {
   // Fetch tide predictions for Delaware Bay area
   const fetchTideData = async () => {
     try {
-      // Use your Vercel API route instead of direct API call
-      const response = await fetch('/api/tides?station=8557380&days=3');
+      console.log('🌊 Fetching tide data...');
       
-      if (response.ok) {
-        const result = await response.json();
-        if (result.success && result.data) {
-          setTideData(result.data);
-          return result.data;
+      if (process.env.NODE_ENV === 'production') {
+        // Production: Use your Vercel API
+        const response = await fetch('/api/tides?station=8557380&days=3');
+        console.log('🌊 Tide response status:', response.status);
+        
+        if (response.ok) {
+          const result = await response.json();
+          console.log('🌊 Raw tide API result:', result);
+          
+          if (result.success && result.data) {
+            setTideData(result.data);
+            return result.data;
+          }
+        }
+      } else {
+        // Development: Try direct API call
+        try {
+          const endDate = new Date();
+          endDate.setDate(endDate.getDate() + 3);
+          const startDate = new Date();
+          
+          const formatDate = (date) => {
+            return date.getFullYear() + 
+                   ('0' + (date.getMonth() + 1)).slice(-2) + 
+                   ('0' + date.getDate()).slice(-2);
+          };
+          
+          const response = await fetch(
+            `https://api.tidesandcurrents.noaa.gov/api/prod/datagetter?begin_date=${formatDate(startDate)}&end_date=${formatDate(endDate)}&station=8557380&product=predictions&datum=navd&units=english&time_zone=lst_ldt&application=web_services&format=json`
+          );
+          
+          if (response.ok) {
+            const data = await response.json();
+            if (data.predictions) {
+              setTideData(data.predictions);
+              return data.predictions;
+            }
+          }
+        } catch (corsErr) {
+          console.log('🌊 CORS error in development, using demo data');
         }
       }
     } catch (err) {
-      console.error('Tide API error:', err);
+      console.error('🌊 Tide API error:', err);
     }
     
-    // Fallback to demo data if API fails
+    console.log('🌊 Falling back to demo tide data');
     const demoTides = generateDemoTideData();
+    console.log('🌊 Demo tides generated, length:', demoTides.length);
+    console.log('🌊 Demo tides first item:', demoTides[0]);
     setTideData(demoTides);
     return demoTides;
   };
@@ -163,6 +246,29 @@ const WaterGaugeApp = () => {
       const weatherHour = weather[i];
       const tideHour = tides[i];
       
+      if (i === 0) {
+        console.log('🌊 Calculating flood forecast with:', {
+          weatherLength: weather?.length,
+          tidesLength: tides?.length,
+          weatherFirst: weather?.[0],
+          tideFirst: tides?.[0]
+        });
+
+        console.log('🌊 Weather first item details:', {
+          temp: weather?.[0]?.temperature,
+          pressure: weather?.[0]?.barometricPressure, 
+          wind: weather?.[0]?.windSpeed,
+          rain: weather?.[0]?.probabilityOfPrecipitation,
+          rainType: typeof weather?.[0]?.probabilityOfPrecipitation
+        });
+        
+        console.log('🌊 Tide first item details:', {
+          time: tides?.[0]?.t,
+          value: tides?.[0]?.v,
+          valueType: typeof tides?.[0]?.v
+        });
+      }
+
       let predictedLevel = baseLevel;
       
       // Initialize variables with default values
@@ -184,9 +290,16 @@ const WaterGaugeApp = () => {
         } else {
           rainChance = weatherHour.probabilityOfPrecipitation || 0;
         }
-        
+        if (i < 3) {
+          console.log(`🌊 Hour ${i}: rainChance=${rainChance}, pressure=${pressure}, windSpeed=${windSpeed}, predictedLevel=${predictedLevel}`);
+          console.log(`🌊 Hour ${i} - After toFixed: ${+predictedLevel.toFixed(2)}, isNaN: ${isNaN(+predictedLevel.toFixed(2))}`);
+        }
         const rainImpact = (rainChance / 100) * 0.5;
         predictedLevel += rainImpact;
+
+        if (i < 3) {
+          console.log(`🌊 Hour ${i} - After rain: predictedLevel=${predictedLevel}`);
+        }
         
         // Safely extract pressure
         if (typeof weatherHour.barometricPressure === 'object') {
@@ -197,18 +310,39 @@ const WaterGaugeApp = () => {
         const pressureEffect = (30.0 - pressure) * 0.1;
         predictedLevel += pressureEffect;
         
+        if (i < 3) {
+          console.log(`🌊 Hour ${i} - After pressure: predictedLevel=${predictedLevel}`);
+        }
+
+
         // Safely extract wind speed
         if (typeof weatherHour.windSpeed === 'object') {
           windSpeed = weatherHour.windSpeed?.value || 5;
         } else {
-          windSpeed = weatherHour.windSpeed || 5;
+          windSpeed = extractValue(weatherHour.windSpeed) || 5;
         }
+
+        // Add logging to verify the fix
+        if (i < 3) {
+          console.log(`🌊 Hour ${i} - Wind extracted: ${windSpeed}, type: ${typeof windSpeed}`);
+        }
+
         const windEffect = Math.max(0, (windSpeed - 20)) * 0.02;
         predictedLevel += windEffect;
+
+        if (i < 3) {
+          console.log(`🌊 Hour ${i} - After wind: predictedLevel=${predictedLevel}`);
+        }
+
       }
       
       let riskLevel = 'Normal';
       let riskColor = 'text-green-600';
+
+      if (i < 3) {
+        console.log(`🌊 Hour ${i} - Before risk calc: predictedLevel=${predictedLevel}`);
+      }
+
       if (predictedLevel > 4.0) {
         riskLevel = 'Major Flood';
         riskColor = 'text-red-600';
@@ -222,20 +356,48 @@ const WaterGaugeApp = () => {
         riskLevel = 'Elevated';
         riskColor = 'text-blue-600';
       }
-      
+      if (i < 3) {
+        console.log(`🌊 Hour ${i} - About to push:`, {
+          predictedLevel: predictedLevel,
+          afterToFixed: +predictedLevel.toFixed(2),
+          rainfall: rainChance,
+          pressure: pressure,
+          windSpeed: windSpeed,
+          tideLevel: parseFloat(tideHour?.v || '2.0'),
+          tideValue: tideHour?.v
+        });
+      }
+
       forecast.push({
         time: time.toISOString(),
         predictedLevel: +predictedLevel.toFixed(2),
         riskLevel,
         riskColor,
-        rainfall: rainChance, // Use the safely extracted value
-        pressure: pressure,   // Use the safely extracted value
-        windSpeed: windSpeed, // Use the safely extracted value
+        rainfall: rainChance,
+        pressure: pressure,
+        windSpeed: windSpeed,
         tideLevel: parseFloat(tideHour?.v || '2.0'),
         shortForecast: weatherHour?.shortForecast || 'Clear'
       });
     }
-    
+    console.log('🌊 Flood forecast generated:', {
+      length: forecast.length,
+      first: forecast[0],
+      hasValidLevels: forecast.filter(f => !isNaN(f.predictedLevel)).length
+    });
+    console.log('🌊 Flood forecast generated:', {
+      length: forecast.length,
+      first: forecast[0],
+      firstPredictedLevel: forecast[0]?.predictedLevel,
+      firstPredictedLevelType: typeof forecast[0]?.predictedLevel,
+      isFirstNaN: isNaN(forecast[0]?.predictedLevel),
+      hasValidLevels: forecast.filter(f => !isNaN(f.predictedLevel)).length,
+      sample: forecast.slice(0, 3).map(f => ({
+        time: new Date(f.time).toLocaleTimeString(),
+        level: f.predictedLevel,
+        isNaN: isNaN(f.predictedLevel)
+      }))
+    });
     return forecast;
   };
 
@@ -264,7 +426,7 @@ const WaterGaugeApp = () => {
           }
         };
         setGaugeData(demoData);
-        setError('Connecting to live data sources. Some features may show demo data during API transitions.');
+        // setError('Live weather and tidal data active. Jefferson Creek gauge data simulated for demonstration.');
         
       } else {
         const response = await fetch(
@@ -599,54 +761,54 @@ const WaterGaugeApp = () => {
                       
                       <Area 
                         type="monotone" 
-                        dataKey="predictedLevel" 
+                        dataKey="predictedLevel"
                         stroke="#2563eb" 
-                        strokeWidth={2}
-                        fillOpacity={1}
-                        fill="url(#colorLevel)"
-                      />
-                    </AreaChart>
-                  </ResponsiveContainer>
-                </div>
-                <div className="mt-4 grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-                  <div className="flex items-center gap-2">
-                    <div className="w-4 h-4 bg-green-200 border border-green-400"></div>
-                    <span>Normal (&lt;3.0 ft)</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <div className="w-4 h-4 bg-yellow-200 border border-yellow-400"></div>
-                    <span>Minor Flood (3.0-3.5 ft)</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <div className="w-4 h-4 bg-orange-200 border border-orange-400"></div>
-                    <span>Moderate (3.5-4.0 ft)</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <div className="w-4 h-4 bg-red-200 border border-red-400"></div>
-                    <span>Major (&gt;4.0 ft)</span>
-                  </div>
-                </div>
-              </div>
-            )}
+                       strokeWidth={2}
+                       fillOpacity={1}
+                       fill="url(#colorLevel)"
+                     />
+                   </AreaChart>
+                 </ResponsiveContainer>
+               </div>
+               <div className="mt-4 grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                 <div className="flex items-center gap-2">
+                   <div className="w-4 h-4 bg-green-200 border border-green-400"></div>
+                   <span>Normal (&lt;3.0 ft)</span>
+                 </div>
+                 <div className="flex items-center gap-2">
+                   <div className="w-4 h-4 bg-yellow-200 border border-yellow-400"></div>
+                   <span>Minor Flood (3.0-3.5 ft)</span>
+                 </div>
+                 <div className="flex items-center gap-2">
+                   <div className="w-4 h-4 bg-orange-200 border border-orange-400"></div>
+                   <span>Moderate (3.5-4.0 ft)</span>
+                 </div>
+                 <div className="flex items-center gap-2">
+                   <div className="w-4 h-4 bg-red-200 border border-red-400"></div>
+                   <span>Major (&gt;4.0 ft)</span>
+                 </div>
+               </div>
+             </div>
+           )}
 
-            {/* Weather Factors */}
-            {weatherData && (
-              <div className="bg-white rounded-xl border border-gray-200 p-6 mb-8">
-                <h3 className="text-xl font-semibold text-gray-800 mb-4">Weather Impact Factors</h3>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                  {/* Rainfall Forecast */}
-                  <div>
-                    <h4 className="font-semibold text-gray-700 mb-3 flex items-center gap-2">
-                      <Cloud className="w-5 h-5" />
-                      24-Hour Rainfall Probability
-                    </h4>
-                    <div className="h-32">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <BarChart data={weatherData.slice(0, 24).map(hour => ({
-                          ...hour,
-                          probabilityOfPrecipitation: extractValue(hour.probabilityOfPrecipitation)
-                        }))}>
-                          <CartesianGrid strokeDasharray="3 3" />
+           {/* Weather Factors */}
+           {weatherData && (
+             <div className="bg-white rounded-xl border border-gray-200 p-6 mb-8">
+               <h3 className="text-xl font-semibold text-gray-800 mb-4">Weather Impact Factors</h3>
+               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                 {/* Rainfall Forecast */}
+                 <div>
+                   <h4 className="font-semibold text-gray-700 mb-3 flex items-center gap-2">
+                     <Cloud className="w-5 h-5" />
+                     24-Hour Rainfall Probability
+                   </h4>
+                   <div className="h-32">
+                     <ResponsiveContainer width="100%" height="100%">
+                       <BarChart data={weatherData.slice(0, 24).map(hour => ({
+                         ...hour,
+                         probabilityOfPrecipitation: extractValue(hour.probabilityOfPrecipitation)
+                       }))}>
+                         <CartesianGrid strokeDasharray="3 3" />
                          <XAxis 
                            dataKey="startTime"
                            tick={{ fontSize: 10 }}
