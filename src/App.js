@@ -105,8 +105,19 @@ const WaterGaugeApp = () => {
       if (response.ok) {
         const result = await response.json();
         if (result.success && result.data) {
-          setWeatherData(result.data);
-          return result.data;
+          // Process the real API data to match our expected format
+          const processedData = result.data.map(period => ({
+            ...period,
+            // Ensure probabilityOfPrecipitation is always a number
+            probabilityOfPrecipitation: period.probabilityOfPrecipitation?.value || period.probabilityOfPrecipitation || 0,
+            // Ensure other values are properly extracted
+            temperature: extractValue(period.temperature),
+            windSpeed: extractValue(period.windSpeed),
+            barometricPressure: extractValue(period.barometricPressure) || 29.9
+          }));
+          
+          setWeatherData(processedData);
+          return processedData;
         }
       }
     } catch (err) {
@@ -154,6 +165,11 @@ const WaterGaugeApp = () => {
       
       let predictedLevel = baseLevel;
       
+      // Initialize variables with default values
+      let rainChance = 0;
+      let pressure = 29.9;
+      let windSpeed = 5;
+      
       // Tidal influence
       if (tideHour) {
         const tidalInfluence = (parseFloat(tideHour.v) - 2.0) * 0.3;
@@ -162,15 +178,31 @@ const WaterGaugeApp = () => {
       
       // Rainfall influence
       if (weatherHour) {
-        const rainChance = extractValue(weatherHour.probabilityOfPrecipitation) || 0;
+        // Safely extract rainfall chance - handle both object and number formats
+        if (typeof weatherHour.probabilityOfPrecipitation === 'object') {
+          rainChance = weatherHour.probabilityOfPrecipitation?.value || 0;
+        } else {
+          rainChance = weatherHour.probabilityOfPrecipitation || 0;
+        }
+        
         const rainImpact = (rainChance / 100) * 0.5;
         predictedLevel += rainImpact;
         
-        const pressure = extractValue(weatherHour.barometricPressure) || 29.9;
+        // Safely extract pressure
+        if (typeof weatherHour.barometricPressure === 'object') {
+          pressure = weatherHour.barometricPressure?.value || 29.9;
+        } else {
+          pressure = weatherHour.barometricPressure || 29.9;
+        }
         const pressureEffect = (30.0 - pressure) * 0.1;
         predictedLevel += pressureEffect;
         
-        const windSpeed = extractValue(weatherHour.windSpeed) || 5;
+        // Safely extract wind speed
+        if (typeof weatherHour.windSpeed === 'object') {
+          windSpeed = weatherHour.windSpeed?.value || 5;
+        } else {
+          windSpeed = weatherHour.windSpeed || 5;
+        }
         const windEffect = Math.max(0, (windSpeed - 20)) * 0.02;
         predictedLevel += windEffect;
       }
@@ -196,9 +228,9 @@ const WaterGaugeApp = () => {
         predictedLevel: +predictedLevel.toFixed(2),
         riskLevel,
         riskColor,
-        rainfall: extractValue(weatherHour?.probabilityOfPrecipitation) || 0,
-        pressure: extractValue(weatherHour?.barometricPressure) || 29.9,
-        windSpeed: extractValue(weatherHour?.windSpeed) || 5,
+        rainfall: rainChance, // Use the safely extracted value
+        pressure: pressure,   // Use the safely extracted value
+        windSpeed: windSpeed, // Use the safely extracted value
         tideLevel: parseFloat(tideHour?.v || '2.0'),
         shortForecast: weatherHour?.shortForecast || 'Clear'
       });
